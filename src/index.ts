@@ -7,7 +7,13 @@ export {
   type SlotOptions,
 } from "./slotText.js";
 
-import { animateSlotText, buildSlotText, clearSlotText, type SlotOptions } from "./slotText.js";
+import { TUNING } from "./constants.js";
+import {
+  animateSlotText,
+  clearSlotText,
+  renderTextWithCssFallback,
+  type SlotOptions,
+} from "./slotText.js";
 
 export interface FlashOptions {
   /** How long the flash text stays before rolling back, in ms (default 1400). */
@@ -45,58 +51,66 @@ export interface SlotTextController {
 export function slotText(
   element: HTMLElement,
   initialText: string,
-  options: SlotOptions = {},
+  defaultOptions: SlotOptions = {},
 ): SlotTextController {
-  let value = initialText;
-  let revertTimeout: number | undefined;
+  let currentValue = initialText;
+  let revertTimerId: number | undefined;
   let restingText: string | undefined;
-  buildSlotText(element, initialText);
+  renderTextWithCssFallback(element, initialText);
+  const animateWithoutInterrupt = (text: string, overrides?: SlotOptions) =>
+    animateSlotText(element, text, {
+      ...defaultOptions,
+      interrupt: false,
+      ...overrides,
+    });
 
   return {
     element,
     get value() {
-      return value;
+      return currentValue;
     },
-    set(text, nextOptions = {}) {
+    set(text, optionOverrides = {}) {
       // An explicit set wins over a pending flash revert.
-      clearTimeout(revertTimeout);
+      clearTimeout(revertTimerId);
       restingText = undefined;
-      value = text;
-      animateSlotText(element, text, { ...options, ...nextOptions });
+      currentValue = text;
+      animateSlotText(element, text, {
+        ...defaultOptions,
+        ...optionOverrides,
+      });
     },
-    flash(text, { revertAfter = 1400, enter, exit } = {}) {
+    flash(
+      text,
+      {
+        revertAfter = TUNING.lifecycle.flashRevertDelayMs,
+        enter: enterOptions,
+        exit: exitOptions,
+      } = {},
+    ) {
       // Capture the resting text only on the first flash of a burst, so a
       // flash-during-flash still reverts to the original label.
       if (restingText === undefined) {
-        restingText = value;
+        restingText = currentValue;
       }
 
       // Flashes default to non-interrupting rolls: spam-friendly, no mid-roll
       // cutoffs. Callers can still override via `enter`/`exit`.
-      value = text;
-      animateSlotText(element, text, {
-        ...options,
-        interrupt: false,
-        ...enter,
-      });
+      currentValue = text;
+      animateWithoutInterrupt(text, enterOptions);
 
       // Restart the revert timer: one revert per burst, after the last flash.
-      clearTimeout(revertTimeout);
-      revertTimeout = window.setTimeout(() => {
-        const back = restingText!;
+      clearTimeout(revertTimerId);
+      revertTimerId = window.setTimeout(() => {
+        const originalText = restingText!;
         restingText = undefined;
-        revertTimeout = undefined;
-        value = back;
-        animateSlotText(element, back, {
-          ...options,
-          interrupt: false,
-          ...exit,
-        });
+        revertTimerId = undefined;
+        currentValue = originalText;
+        animateWithoutInterrupt(originalText, exitOptions);
       }, revertAfter);
     },
     destroy() {
-      clearTimeout(revertTimeout);
-      clearSlotText(element, value);
+      clearTimeout(revertTimerId);
+      clearSlotText(element, currentValue);
     },
   };
 }

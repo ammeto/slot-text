@@ -55,6 +55,17 @@ label.flash("Copied", { enter: { color: chromatic() } });
 
 That's it — import the CSS once, attach to an element, roll text.
 
+## 🧪 Try it locally
+
+The included playground has one button that flashes `Copy` → `Copied` → `Copy`.
+
+```bash
+npm run build
+python3 -m http.server
+```
+
+Open [http://localhost:8000/examples/basic/](http://localhost:8000/examples/basic/).
+
 ## 🧩 API
 
 | Method | What it does |
@@ -176,7 +187,8 @@ font, so widths are always correct.
 - Kerning is lost — pairs like `AV` sit slightly looser (invisible at label sizes).
 - Ligatures won't form (`fi`, `fl`, coding ligatures).
 - Joined scripts (Arabic, Devanagari) render as isolated forms.
-- ZWJ emoji sequences (👨‍👩‍👧) split into cells; single emoji are fine.
+- Grapheme clusters such as combining marks and ZWJ emoji stay together when
+  `Intl.Segmenter` is available; older browsers fall back to Unicode code points.
 - Very tall display fonts may clip at the roll mask (`line-height: 1.3`).
 
 **In short:** ideal for short labels, numbers, statuses and commands — in
@@ -188,4 +200,6 @@ essentially any font you'd use for those.
 - React, Vue, Solid, and Svelte are optional peer dependencies — plain JS users
   don't need them.
 - Import the CSS once before using the animation.
+- If the stylesheet loads late, labels stay as plain readable text and upgrade
+  to slot animation once the required layout styles become available.
 - Low-level helpers also exported: `buildSlotText`, `animateSlotText`, `chromatic`.

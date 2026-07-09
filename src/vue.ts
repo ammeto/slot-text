@@ -9,8 +9,8 @@ import {
 } from "vue";
 import {
   animateSlotText,
-  buildSlotText,
   clearSlotText,
+  renderTextWithCssFallback,
   type SlotOptions,
 } from "./slotText.js";
 
@@ -33,7 +33,7 @@ export const SlotText = defineComponent({
 
     onMounted(() => {
       if (!element.value) return;
-      buildSlotText(element.value, props.text);
+      renderTextWithCssFallback(element.value, props.text);
       mounted = true;
     });
 

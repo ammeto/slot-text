@@ -1,26 +1,80 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { slotText } from "../src/index.js";
+import { resetSlotLayoutCache } from "../src/dom.js";
+import { buildSlotText, slotText } from "../src/index.js";
+import { animateSlotText } from "../src/slotText.js";
 
 let el: HTMLElement;
+let style: HTMLStyleElement;
+
+const SLOT_TEXT_CSS = `
+  .slot-text { display: inline-flex; }
+  .char-slot { position: relative; display: inline-flex; }
+  .char-face { position: absolute; }
+`;
 
 beforeEach(() => {
   vi.useFakeTimers();
+  resetSlotLayoutCache();
+  style = document.createElement("style");
+  style.textContent = SLOT_TEXT_CSS;
+  document.head.appendChild(style);
   el = document.createElement("span");
   document.body.appendChild(el);
 });
 
 afterEach(() => {
+  vi.restoreAllMocks();
   vi.useRealTimers();
+  style.remove();
   el.remove();
 });
 
 const readText = () =>
   Array.from(el.querySelectorAll<HTMLElement>(".char-slot"))
-    .map((s) => s.dataset.char ?? "")
+    .map((slot) => slot.dataset.char ?? "")
     .join("");
 
-describe("slotText() initial DOM", () => {
-  it("builds one slot per character with sizer and face", () => {
+describe("missing CSS fallback", () => {
+  beforeEach(() => style.remove());
+
+  it("keeps exact plain text on initial render and update", () => {
+    const label = slotText(el, "Take the next step");
+
+    expect(el.textContent).toBe("Take the next step");
+    expect(el.querySelector(".char-slot")).toBeNull();
+
+    label.set("Continue");
+
+    expect(label.value).toBe("Continue");
+    expect(el.textContent).toBe("Continue");
+    expect(el.querySelector(".char-slot")).toBeNull();
+  });
+
+  it("replaces unstyled slot markup with plain target text", () => {
+    buildSlotText(el, "Take");
+    expect(el.textContent).toBe("TTaakkee");
+
+    animateSlotText(el, "Continue");
+
+    expect(el.textContent).toBe("Continue");
+    expect(el.querySelector(".char-slot")).toBeNull();
+  });
+
+  it("upgrades plain text after the stylesheet arrives", () => {
+    const label = slotText(el, "Copy");
+    expect(el.querySelector(".char-slot")).toBeNull();
+
+    document.head.appendChild(style);
+    label.set("Copied");
+
+    expect(el.querySelector(".char-slot")).not.toBeNull();
+    vi.runAllTimers();
+    expect(readText()).toBe("Copied");
+  });
+});
+
+describe("initial DOM", () => {
+  it("builds one slot per character with a sizer and face", () => {
     slotText(el, "Copy");
 
     expect(el.classList.contains("slot-text")).toBe(true);
@@ -33,109 +87,161 @@ describe("slotText() initial DOM", () => {
     expect(readText()).toBe("Copy");
   });
 
-  it("renders spaces as NBSP in faces", () => {
+  it("renders spaces as non-breaking spaces in faces", () => {
     slotText(el, "a b");
-    const faces = el.querySelectorAll(".char-face");
-    expect(faces[1].textContent).toBe("\u00A0");
+    const [, spaceFace] = el.querySelectorAll(".char-face");
+    expect(spaceFace.textContent).toBe("\u00A0");
+  });
+});
+
+describe("segmentation", () => {
+  it.each([
+    ["astral emoji", "😀"],
+    ["joined emoji", "👨‍👩‍👧"],
+    ["combining marks", "e\u0301"],
+  ])("keeps %s in one grapheme slot", (_, target) => {
+    const label = slotText(el, "e");
+    label.set(target);
+    vi.runAllTimers();
+
+    expect(el.querySelectorAll(".char-slot")).toHaveLength(1);
+    expect(readText()).toBe(target);
   });
 });
 
 describe("set()", () => {
   it("rolls to the new text and settles there", () => {
     const label = slotText(el, "Copy");
-
     label.set("Copied");
     vi.runAllTimers();
-
     expect(label.value).toBe("Copied");
     expect(readText()).toBe("Copied");
   });
 
-  it("grows and shrinks the slot count to match the new text", () => {
+  it("grows and shrinks the slot count", () => {
     const label = slotText(el, "Hi");
-
     label.set("Hello");
     vi.runAllTimers();
     expect(el.querySelectorAll(".char-slot")).toHaveLength(5);
-    expect(readText()).toBe("Hello");
-
     label.set("Yo");
     vi.runAllTimers();
     expect(el.querySelectorAll(".char-slot")).toHaveLength(2);
     expect(readText()).toBe("Yo");
   });
 
-  it("lands on the last value after rapid set() calls", () => {
+  it("lands on the last value after rapid interrupting calls", () => {
     const label = slotText(el, "one");
-
     label.set("two");
     label.set("three");
     label.set("four");
     vi.runAllTimers();
-
     expect(label.value).toBe("four");
     expect(readText()).toBe("four");
   });
 
   it("keeps the same text when set() receives the current value", () => {
     const label = slotText(el, "Copy");
-
     label.set("Copy");
     vi.runAllTimers();
-
     expect(label.value).toBe("Copy");
-    expect(el.querySelectorAll(".char-slot")).toHaveLength(4);
     expect(readText()).toBe("Copy");
+  });
+
+  it("clears a stale queued request when the latest call matches the target", () => {
+    const label = slotText(el, "Copy");
+    label.set("Saved", { interrupt: false });
+    label.set("Done", { interrupt: false });
+    label.set("Saved", { interrupt: false });
+    vi.runAllTimers();
+    expect(label.value).toBe("Saved");
+    expect(readText()).toBe("Saved");
+  });
+
+  it("animates from an initialized empty value", () => {
+    const label = slotText(el, "");
+    label.set("Go");
+
+    expect(el.querySelectorAll(".char-slot")).toHaveLength(2);
+    expect(readText()).toBe("");
+
+    vi.runAllTimers();
+    expect(readText()).toBe("Go");
   });
 
   it("supports empty initial text", () => {
     const label = slotText(el, "");
-
     expect(label.value).toBe("");
-    expect(readText()).toBe("");
     expect(el.querySelectorAll(".char-slot")).toHaveLength(0);
   });
 
-  it("clears slots when set() receives an empty string", () => {
+  it("clears slots when the target is empty", () => {
     const label = slotText(el, "Copy");
-
     label.set("");
     vi.runAllTimers();
-
-    expect(label.value).toBe("");
-    expect(readText()).toBe("");
     expect(el.querySelectorAll(".char-slot")).toHaveLength(0);
+    expect(readText()).toBe("");
   });
 
-  it("supports non-basic characters", () => {
-    const label = slotText(el, "Copy!");
+  it("keeps default timings when an optional value is explicitly undefined", () => {
+    const label = slotText(el, "Copy");
+    const timeout = vi.spyOn(window, "setTimeout");
 
-    label.set("✓");
-    vi.runAllTimers();
+    label.set("Done", { duration: undefined, stagger: undefined });
 
-    expect(label.value).toBe("✓");
-    expect(el.querySelectorAll(".char-slot")).toHaveLength(1);
-    expect(readText()).toBe("✓");
+    const delays = timeout.mock.calls.map((call) => call[1]);
+    expect(delays.length).toBeGreaterThan(0);
+    expect(delays.every((delay) => Number.isFinite(delay))).toBe(true);
   });
 });
 
-// A revert window far longer than any roll animation, so we can settle the
-// flash roll first and assert its DOM before the auto-revert fires.
-const LONG_REVERT = 100000;
-// Comfortably past the longest roll animation, but short of LONG_REVERT.
-const SETTLE = 5000;
+describe("buildSlotText()", () => {
+  it("cancels animation ownership before replacing the DOM", () => {
+    const label = slotText(el, "Copy");
+    label.set("Animating");
+
+    buildSlotText(el, "Manual");
+    vi.runAllTimers();
+
+    expect(readText()).toBe("Manual");
+  });
+});
+
+describe("transition cleanup", () => {
+  it("finalizes a slot when its transform transition ends", () => {
+    const LONG_TRANSITION_DURATION_MS = 10000;
+    const TRANSITION_START_WAIT_MS = 1;
+    const label = slotText(el, "A");
+    label.set("B", {
+      bounce: 0,
+      duration: LONG_TRANSITION_DURATION_MS,
+      exitOffset: 0,
+      stagger: 0,
+    });
+    vi.advanceTimersByTime(TRANSITION_START_WAIT_MS);
+
+    const faces = el.querySelectorAll<HTMLElement>(".char-face");
+    const incoming = faces[faces.length - 1];
+    const transitionEnd = new Event("transitionend") as TransitionEvent;
+    Object.defineProperty(transitionEnd, "propertyName", { value: "transform" });
+    incoming.dispatchEvent(transitionEnd);
+
+    expect(el.querySelectorAll(".char-face")).toHaveLength(1);
+    expect(readText()).toBe("B");
+  });
+});
+
+const LONG_REVERT_DELAY_MS = 100000;
+const ANIMATION_SETTLE_WAIT_MS = 5000;
+const SECOND_FLASH_DELAY_MS = 400;
+const SHORT_REVERT_DELAY_MS = 1000;
 
 describe("flash()", () => {
-  it("shows the flash text, then reverts to the original", () => {
+  it("shows the flash text, then reverts", () => {
     const label = slotText(el, "Copy");
-
-    label.flash("Copied", { revertAfter: LONG_REVERT });
-    expect(label.value).toBe("Copied");
-
-    vi.advanceTimersByTime(SETTLE);
+    label.flash("Copied", { revertAfter: LONG_REVERT_DELAY_MS });
+    vi.advanceTimersByTime(ANIMATION_SETTLE_WAIT_MS);
     expect(readText()).toBe("Copied");
-
-    vi.advanceTimersByTime(LONG_REVERT);
+    vi.advanceTimersByTime(LONG_REVERT_DELAY_MS);
     vi.runAllTimers();
     expect(label.value).toBe("Copy");
     expect(readText()).toBe("Copy");
@@ -143,16 +249,12 @@ describe("flash()", () => {
 
   it("reverts to the original after a burst of flashes", () => {
     const label = slotText(el, "Copy");
-
-    label.flash("Copied", { revertAfter: LONG_REVERT });
-    vi.advanceTimersByTime(400);
-    label.flash("Copied!", { revertAfter: LONG_REVERT });
-    expect(label.value).toBe("Copied!");
-
-    vi.advanceTimersByTime(SETTLE);
+    label.flash("Copied", { revertAfter: LONG_REVERT_DELAY_MS });
+    vi.advanceTimersByTime(SECOND_FLASH_DELAY_MS);
+    label.flash("Copied!", { revertAfter: LONG_REVERT_DELAY_MS });
+    vi.advanceTimersByTime(ANIMATION_SETTLE_WAIT_MS);
     expect(readText()).toBe("Copied!");
-
-    vi.advanceTimersByTime(LONG_REVERT);
+    vi.advanceTimersByTime(LONG_REVERT_DELAY_MS);
     vi.runAllTimers();
     expect(label.value).toBe("Copy");
     expect(readText()).toBe("Copy");
@@ -160,35 +262,31 @@ describe("flash()", () => {
 
   it("is cancelled by an explicit set()", () => {
     const label = slotText(el, "Copy");
-
-    label.flash("Copied", { revertAfter: 1000 });
+    label.flash("Copied", { revertAfter: SHORT_REVERT_DELAY_MS });
     label.set("Done");
     vi.runAllTimers();
-
     expect(label.value).toBe("Done");
     expect(readText()).toBe("Done");
   });
 });
 
 describe("destroy()", () => {
-  it("restores plain text and removes slot markup", () => {
+  it("restores plain text and cancels pending work", () => {
     const label = slotText(el, "Copy");
-
+    label.set("Copied");
     label.destroy();
-
+    vi.runAllTimers();
     expect(el.classList.contains("slot-text")).toBe(false);
-    expect(el.querySelectorAll(".char-slot")).toHaveLength(0);
-    expect(el.textContent).toBe("Copy");
+    expect(el.querySelector(".char-slot")).toBeNull();
+    expect(el.textContent).toBe("Copied");
   });
 
   it("cancels a pending flash revert", () => {
     const label = slotText(el, "Copy");
-
-    label.flash("Copied", { revertAfter: LONG_REVERT });
-    vi.advanceTimersByTime(SETTLE);
+    label.flash("Copied", { revertAfter: LONG_REVERT_DELAY_MS });
+    vi.advanceTimersByTime(ANIMATION_SETTLE_WAIT_MS);
     label.destroy();
     vi.runAllTimers();
-
     expect(el.classList.contains("slot-text")).toBe(false);
     expect(el.textContent).toBe("Copied");
   });

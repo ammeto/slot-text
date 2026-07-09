@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>slot-text example</title>
+    <title>slot-text playground</title>
     <link rel="stylesheet" href="../../style.css" />
     <style>
       body {
@@ -11,24 +11,63 @@
         margin: 0;
         display: grid;
         place-items: center;
-        font: 600 18px/1.2 ui-sans-serif, system-ui, sans-serif;
+        font:
+          600 16px/1.2 ui-sans-serif,
+          system-ui,
+          sans-serif;
         background: #0e1116;
         color: #edf2f7;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      main {
+        display: grid;
+        gap: 16px;
+        justify-items: center;
+      }
+
+      p {
+        margin: 0;
+        color: #9ca3af;
+        font-size: 13px;
+        font-weight: 500;
+        letter-spacing: 0.02em;
       }
 
       button {
-        border: 1px solid #2a3342;
-        border-radius: 10px;
+        --button-text-color: #0c50c6;
+        min-width: 112px;
+        min-height: 44px;
+        border: 0;
+        border-radius: 12px;
         padding: 12px 18px;
-        background: #151a22;
-        color: inherit;
+        background: #edf2f7;
+        color: var(--button-text-color);
         font: inherit;
         cursor: pointer;
+        box-shadow: 0 1px 1px rgb(0 0 0 / 20%);
+        transition: transform 160ms cubic-bezier(0.2, 0, 0, 1);
+      }
+
+      button:hover {
+        transform: translateY(-1px);
+      }
+
+      button:active {
+        transform: scale(0.96);
+      }
+
+      #copy-label,
+      #copy-label .char-face {
+        color: var(--button-text-color);
       }
     </style>
   </head>
   <body>
-    <button type="button"><span id="copy-label"></span></button>
+    <main>
+      <p>Click the button to test slot-text.</p>
+      <button type="button"><span id="copy-label"></span></button>
+    </main>
 
     <script type="module">
       import { slotText, chromatic } from "../../dist/index.js";

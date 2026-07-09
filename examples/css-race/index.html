@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>slot-text delayed CSS example</title>
+    <style>
+      body {
+        min-height: 100vh;
+        margin: 0;
+        display: grid;
+        place-items: center;
+        font: 800 48px/1.1 ui-sans-serif, system-ui, sans-serif;
+      }
+    </style>
+  </head>
+  <body>
+    <button type="button"><span id="label">Take the next step</span></button>
+
+    <script type="module">
+      import { slotText } from "../../dist/index.js";
+
+      const STYLESHEET_DELAY_MS = 900;
+
+      const label = slotText(
+        document.querySelector("#label"),
+        "Take the next step",
+      );
+      label.set("Continue");
+
+      window.setTimeout(() => {
+        const stylesheet = document.createElement("link");
+        stylesheet.rel = "stylesheet";
+        stylesheet.href = "../../style.css";
+        document.head.appendChild(stylesheet);
+      }, STYLESHEET_DELAY_MS);
+    </script>
+  </body>
+</html>
